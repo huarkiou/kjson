@@ -1,0 +1,11 @@
+[package]
+name = "kjson"
+version = "0.0.1"
+edition = "2024"
+license = "MIT"
+description = "A lightweight JSON parser intended for educational use and learning purposes."
+homepage = "https://github.com/huarkiou/kjson"
+documentation = "https://github.com/huarkiou/kjson"
+repository = "https://github.com/huarkiou/kjson"
+
+[dependencies]
