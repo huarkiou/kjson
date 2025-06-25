@@ -122,8 +122,11 @@ impl Value {
         }
         {
             let len_int = Value::skip_following_digits(bytes, index_end);
-            if (bytes[index_end] == b'0' && len_int > 1) || len_int == 0 {
+            if len_int == 0 {
                 return Err(ParseError::InvalidValue);
+            }
+            if bytes[index_end] == b'0' && len_int > 1 {
+                return Err(ParseError::RootNotSingular);
             }
             index_end += len_int;
         }
@@ -290,5 +293,8 @@ mod tests {
             Value::parse("null\n\r \ttrue\r \t\r").err().unwrap(),
             ParseError::RootNotSingular
         );
+        assert_eq!(Value::parse("0123").err().unwrap(), ParseError::RootNotSingular);
+        assert_eq!(Value::parse("0x0").err().unwrap(), ParseError::RootNotSingular);
+        assert_eq!(Value::parse("0x123").err().unwrap(), ParseError::RootNotSingular);
     }
 }
