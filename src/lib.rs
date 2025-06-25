@@ -276,6 +276,42 @@ mod tests {
             Value::parse("2e-1022").ok().unwrap(),
             Value::Number(Number::Float(2.0e-1022))
         );
+        assert_eq!(
+            Value::parse("1.0000000000000002").ok().unwrap(),
+            Value::Number(Number::Float(1.0000000000000002))
+        ); /* the smallest number > 1 */
+        assert_eq!(
+            Value::parse("4.9406564584124654e-324").ok().unwrap(),
+            Value::Number(Number::Float(4.9406564584124654e-324))
+        ); /* minimum denormal */
+        assert_eq!(
+            Value::parse("-4.9406564584124654e-324").ok().unwrap(),
+            Value::Number(Number::Float(-4.9406564584124654e-324))
+        );
+        assert_eq!(
+            Value::parse("2.2250738585072009e-308").ok().unwrap(),
+            Value::Number(Number::Float(2.2250738585072009e-308))
+        ); /* Max subnormal double */
+        assert_eq!(
+            Value::parse("-2.2250738585072009e-308").ok().unwrap(),
+            Value::Number(Number::Float(-2.2250738585072009e-308))
+        );
+        assert_eq!(
+            Value::parse("2.2250738585072014e-308").ok().unwrap(),
+            Value::Number(Number::Float(2.2250738585072014e-308))
+        ); /* Min normal positive double */
+        assert_eq!(
+            Value::parse("-2.2250738585072014e-308").ok().unwrap(),
+            Value::Number(Number::Float(-2.2250738585072014e-308))
+        );
+        assert_eq!(
+            Value::parse("1.7976931348623157e+308").ok().unwrap(),
+            Value::Number(Number::Float(1.7976931348623157e+308))
+        ); /* Max double */
+        assert_eq!(
+            Value::parse("-1.7976931348623157e+308").ok().unwrap(),
+            Value::Number(Number::Float(-1.7976931348623157e+308))
+        );
 
         // error
         assert_eq!(Value::parse("+0").err().unwrap(), ParseError::InvalidValue);
