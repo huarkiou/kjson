@@ -85,6 +85,73 @@ impl Value {
         Ok(Value::Bool(false))
     }
 
+    fn skip_following_digits(bytes: &[u8], start: usize) -> usize {
+        if start >= bytes.len() {
+            return 0 as usize;
+        }
+        let mut count: usize = 0;
+        for &b in bytes[start..].iter() {
+            if !(b.is_ascii_digit()) {
+                break;
+            }
+            count += 1;
+        }
+        return count;
+    }
+
+    fn parse_number(context: &mut Context) -> Result<Value, ParseError> {
+        let bytes = context.json.as_bytes();
+        // assert!(bytes.first().unwrap().is_ascii_digit() || *bytes.first().unwrap() == b'-');
+        let mut index_end: usize = 0;
+        let mut is_float: bool = false;
+        // 整数部分
+        if *bytes.first().unwrap() == b'-' {
+            index_end += 1;
+        }
+        {
+            let len_int = Value::skip_following_digits(bytes, index_end);
+            if (bytes[index_end] == b'0' && len_int > 1) || len_int == 0 {
+                return Err(ParseError::InvalidValue);
+            }
+            index_end += len_int;
+        }
+
+        // 小数部分
+        if index_end < bytes.len() && bytes[index_end] == b'.' {
+            index_end += 1;
+            is_float = true;
+            let len_int = Value::skip_following_digits(bytes, index_end);
+            if len_int == 0 {
+                return Err(ParseError::InvalidValue);
+            }
+            index_end += len_int;
+        }
+
+        // 指数部分
+        if index_end < bytes.len() && (bytes[index_end] == b'e' || bytes[index_end] == b'E') {
+            index_end += 1;
+            is_float = true;
+            // 正负号
+            if index_end < bytes.len() && (bytes[index_end] == b'+' || bytes[index_end] == b'-') {
+                index_end += 1;
+            }
+            let len_int = Value::skip_following_digits(bytes, index_end);
+            if len_int == 0 {
+                return Err(ParseError::InvalidValue);
+            }
+            index_end += len_int;
+        }
+
+        // 转换为二进制返回
+        let number_str = std::str::from_utf8(&bytes[0..index_end]).unwrap();
+        context.json = std::str::from_utf8(&bytes[index_end..]).unwrap();
+        if is_float {
+            Ok(Value::Number(Number::Float(number_str.parse::<f64>().unwrap())))
+        } else {
+            Ok(Value::Number(Number::Int(number_str.parse::<i64>().unwrap())))
+        }
+    }
+
     fn parse_value(context: &mut Context) -> Result<Value, ParseError> {
         let bytes = context.json.as_bytes();
         match bytes.first() {
@@ -92,7 +159,7 @@ impl Value {
                 b'n' => Value::parse_null(context),
                 b't' => Value::parse_true(context),
                 b'f' => Value::parse_false(context),
-                _ => Err(ParseError::InvalidValue),
+                _ => Value::parse_number(context),
             },
             None => Err(ParseError::ExpectValue),
         }
@@ -126,6 +193,41 @@ mod tests {
         assert_eq!(Value::parse(" \t\r\n\nfalse").ok().unwrap(), Value::Bool(false));
         assert_eq!(Value::parse("false \t\r\n\n").ok().unwrap(), Value::Bool(false));
         assert_eq!(Value::parse(" \t\r\n\nfalse \t\r\n\n").ok().unwrap(), Value::Bool(false));
+    }
+
+    #[test]
+    fn parse_number() {
+        // ok
+        assert_eq!(Value::parse("0").ok().unwrap(), Value::Number(Number::Int(0)));
+        assert_eq!(Value::parse("-0").ok().unwrap(), Value::Number(Number::Int(0)));
+        assert_eq!(Value::parse("1").ok().unwrap(), Value::Number(Number::Int(1)));
+        assert_eq!(Value::parse("-1").ok().unwrap(), Value::Number(Number::Int(-1)));
+        assert_eq!(Value::parse("-0.0").ok().unwrap(), Value::Number(Number::Float(0.0)));
+        assert_eq!(Value::parse("-1.5").ok().unwrap(), Value::Number(Number::Float(-1.5)));
+        assert_eq!(Value::parse("1.5").ok().unwrap(), Value::Number(Number::Float(1.5)));
+        assert_eq!(Value::parse("3.1415926").ok().unwrap(), Value::Number(Number::Float(3.1415926)));
+        assert_eq!(Value::parse("1E10").ok().unwrap(), Value::Number(Number::Float(1E10)));
+        assert_eq!(Value::parse("1e10").ok().unwrap(), Value::Number(Number::Float(1e10)));
+        assert_eq!(Value::parse("1E+10").ok().unwrap(), Value::Number(Number::Float(1E+10)));
+        assert_eq!(Value::parse("1E-10").ok().unwrap(), Value::Number(Number::Float(1E-10)));
+        assert_eq!(Value::parse("-1E10").ok().unwrap(), Value::Number(Number::Float(-1E10)));
+        assert_eq!(Value::parse("-1e10").ok().unwrap(), Value::Number(Number::Float(-1e10)));
+        assert_eq!(Value::parse("-1E+10").ok().unwrap(), Value::Number(Number::Float(-1E+10)));
+        assert_eq!(Value::parse("-1E-10").ok().unwrap(), Value::Number(Number::Float(-1E-10)));
+        assert_eq!(Value::parse("1.234E+10").ok().unwrap(), Value::Number(Number::Float(1.234E+10)));
+        assert_eq!(Value::parse("1.234E-10").ok().unwrap(), Value::Number(Number::Float(1.234E-10)));
+        assert_eq!(Value::parse("1e-10000").ok().unwrap(), Value::Number(Number::Float(0.0)));
+
+        // error
+        assert_eq!(Value::parse("+0").err().unwrap(), ParseError::InvalidValue);
+        assert_eq!(Value::parse("+1").err().unwrap(), ParseError::InvalidValue);
+        assert_eq!(Value::parse(".123").err().unwrap(), ParseError::InvalidValue);
+        assert_eq!(Value::parse("1.").err().unwrap(), ParseError::InvalidValue);
+        assert_eq!(Value::parse("INF").err().unwrap(), ParseError::InvalidValue);
+        assert_eq!(Value::parse("inf").err().unwrap(), ParseError::InvalidValue);
+        assert_eq!(Value::parse("NAN").err().unwrap(), ParseError::InvalidValue);
+        assert_eq!(Value::parse("NaN").err().unwrap(), ParseError::InvalidValue);
+        assert_eq!(Value::parse("nan").err().unwrap(), ParseError::InvalidValue);
     }
 
     #[test]
