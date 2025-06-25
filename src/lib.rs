@@ -57,32 +57,38 @@ impl Value {
         Ok(())
     }
 
-    fn parse_null(context: &mut Context) -> Result<Value, ParseError> {
+    fn parse_literal(context: &mut Context) -> Result<Value, ParseError> {
         let bytes = context.json.as_bytes();
-        assert_eq!(*bytes.first().unwrap(), b'n');
-        if bytes[0] != b'n' || bytes[1] != b'u' || bytes[2] != b'l' || bytes[3] != b'l' {
-            return Err(ParseError::InvalidValue);
+        match *bytes.first().unwrap() {
+            b'n' => {
+                const NULL_LITERAL: &str = "null";
+                if bytes.len() >= NULL_LITERAL.len() && std::str::from_utf8(&bytes[0..NULL_LITERAL.len()]).unwrap() == NULL_LITERAL {
+                    context.json = std::str::from_utf8(&bytes[NULL_LITERAL.len()..]).unwrap();
+                    Ok(Value::Null)
+                } else {
+                    Err(ParseError::InvalidValue)
+                }
+            }
+            b't' => {
+                const TRUE_LITERAL: &str = "true";
+                if bytes.len() >= TRUE_LITERAL.len() && std::str::from_utf8(&bytes[0..TRUE_LITERAL.len()]).unwrap() == TRUE_LITERAL {
+                    context.json = std::str::from_utf8(&bytes[TRUE_LITERAL.len()..]).unwrap();
+                    Ok(Value::Bool(true))
+                } else {
+                    Err(ParseError::InvalidValue)
+                }
+            }
+            b'f' => {
+                const FALSE_LITERAL: &str = "false";
+                if bytes.len() >= FALSE_LITERAL.len() && std::str::from_utf8(&bytes[0..FALSE_LITERAL.len()]).unwrap() == FALSE_LITERAL {
+                    context.json = std::str::from_utf8(&bytes[FALSE_LITERAL.len()..]).unwrap();
+                    Ok(Value::Bool(false))
+                } else {
+                    Err(ParseError::InvalidValue)
+                }
+            }
+            _ => Err(ParseError::InvalidValue),
         }
-        context.json = std::str::from_utf8(&bytes[4..]).unwrap();
-        Ok(Value::Null)
-    }
-    fn parse_true(context: &mut Context) -> Result<Value, ParseError> {
-        let bytes = context.json.as_bytes();
-        assert_eq!(*bytes.first().unwrap(), b't');
-        if bytes[0] != b't' || bytes[1] != b'r' || bytes[2] != b'u' || bytes[3] != b'e' {
-            return Err(ParseError::InvalidValue);
-        }
-        context.json = std::str::from_utf8(&bytes[4..]).unwrap();
-        Ok(Value::Bool(true))
-    }
-    fn parse_false(context: &mut Context) -> Result<Value, ParseError> {
-        let bytes = context.json.as_bytes();
-        assert_eq!(*bytes.first().unwrap(), b'f');
-        if bytes[0] != b'f' || bytes[1] != b'a' || bytes[2] != b'l' || bytes[3] != b's' || bytes[4] != b'e' {
-            return Err(ParseError::InvalidValue);
-        }
-        context.json = std::str::from_utf8(&bytes[5..]).unwrap();
-        Ok(Value::Bool(false))
     }
 
     fn skip_following_digits(bytes: &[u8], start: usize) -> usize {
@@ -156,9 +162,7 @@ impl Value {
         let bytes = context.json.as_bytes();
         match bytes.first() {
             Some(byte) => match *byte {
-                b'n' => Value::parse_null(context),
-                b't' => Value::parse_true(context),
-                b'f' => Value::parse_false(context),
+                b'n' | b't' | b'f' => Value::parse_literal(context),
                 _ => Value::parse_number(context),
             },
             None => Err(ParseError::ExpectValue),
