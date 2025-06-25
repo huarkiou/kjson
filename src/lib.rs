@@ -62,7 +62,9 @@ impl Value {
         match *bytes.first().unwrap() {
             b'n' => {
                 const NULL_LITERAL: &str = "null";
-                if bytes.len() >= NULL_LITERAL.len() && std::str::from_utf8(&bytes[0..NULL_LITERAL.len()]).unwrap() == NULL_LITERAL {
+                if bytes.len() >= NULL_LITERAL.len()
+                    && std::str::from_utf8(&bytes[0..NULL_LITERAL.len()]).unwrap() == NULL_LITERAL
+                {
                     context.json = std::str::from_utf8(&bytes[NULL_LITERAL.len()..]).unwrap();
                     Ok(Value::Null)
                 } else {
@@ -71,7 +73,9 @@ impl Value {
             }
             b't' => {
                 const TRUE_LITERAL: &str = "true";
-                if bytes.len() >= TRUE_LITERAL.len() && std::str::from_utf8(&bytes[0..TRUE_LITERAL.len()]).unwrap() == TRUE_LITERAL {
+                if bytes.len() >= TRUE_LITERAL.len()
+                    && std::str::from_utf8(&bytes[0..TRUE_LITERAL.len()]).unwrap() == TRUE_LITERAL
+                {
                     context.json = std::str::from_utf8(&bytes[TRUE_LITERAL.len()..]).unwrap();
                     Ok(Value::Bool(true))
                 } else {
@@ -80,7 +84,9 @@ impl Value {
             }
             b'f' => {
                 const FALSE_LITERAL: &str = "false";
-                if bytes.len() >= FALSE_LITERAL.len() && std::str::from_utf8(&bytes[0..FALSE_LITERAL.len()]).unwrap() == FALSE_LITERAL {
+                if bytes.len() >= FALSE_LITERAL.len()
+                    && std::str::from_utf8(&bytes[0..FALSE_LITERAL.len()]).unwrap() == FALSE_LITERAL
+                {
                     context.json = std::str::from_utf8(&bytes[FALSE_LITERAL.len()..]).unwrap();
                     Ok(Value::Bool(false))
                 } else {
@@ -196,7 +202,10 @@ mod tests {
         assert_eq!(Value::parse("false").ok().unwrap(), Value::Bool(false));
         assert_eq!(Value::parse(" \t\r\n\nfalse").ok().unwrap(), Value::Bool(false));
         assert_eq!(Value::parse("false \t\r\n\n").ok().unwrap(), Value::Bool(false));
-        assert_eq!(Value::parse(" \t\r\n\nfalse \t\r\n\n").ok().unwrap(), Value::Bool(false));
+        assert_eq!(
+            Value::parse(" \t\r\n\nfalse \t\r\n\n").ok().unwrap(),
+            Value::Bool(false)
+        );
     }
 
     #[test]
@@ -209,18 +218,36 @@ mod tests {
         assert_eq!(Value::parse("-0.0").ok().unwrap(), Value::Number(Number::Float(0.0)));
         assert_eq!(Value::parse("-1.5").ok().unwrap(), Value::Number(Number::Float(-1.5)));
         assert_eq!(Value::parse("1.5").ok().unwrap(), Value::Number(Number::Float(1.5)));
-        assert_eq!(Value::parse("3.1415926").ok().unwrap(), Value::Number(Number::Float(3.1415926)));
+        assert_eq!(
+            Value::parse("3.1415926").ok().unwrap(),
+            Value::Number(Number::Float(3.1415926))
+        );
         assert_eq!(Value::parse("1E10").ok().unwrap(), Value::Number(Number::Float(1E10)));
         assert_eq!(Value::parse("1e10").ok().unwrap(), Value::Number(Number::Float(1e10)));
         assert_eq!(Value::parse("1E+10").ok().unwrap(), Value::Number(Number::Float(1E+10)));
         assert_eq!(Value::parse("1E-10").ok().unwrap(), Value::Number(Number::Float(1E-10)));
         assert_eq!(Value::parse("-1E10").ok().unwrap(), Value::Number(Number::Float(-1E10)));
         assert_eq!(Value::parse("-1e10").ok().unwrap(), Value::Number(Number::Float(-1e10)));
-        assert_eq!(Value::parse("-1E+10").ok().unwrap(), Value::Number(Number::Float(-1E+10)));
-        assert_eq!(Value::parse("-1E-10").ok().unwrap(), Value::Number(Number::Float(-1E-10)));
-        assert_eq!(Value::parse("1.234E+10").ok().unwrap(), Value::Number(Number::Float(1.234E+10)));
-        assert_eq!(Value::parse("1.234E-10").ok().unwrap(), Value::Number(Number::Float(1.234E-10)));
-        assert_eq!(Value::parse("1e-10000").ok().unwrap(), Value::Number(Number::Float(0.0)));
+        assert_eq!(
+            Value::parse("-1E+10").ok().unwrap(),
+            Value::Number(Number::Float(-1E+10))
+        );
+        assert_eq!(
+            Value::parse("-1E-10").ok().unwrap(),
+            Value::Number(Number::Float(-1E-10))
+        );
+        assert_eq!(
+            Value::parse("1.234E+10").ok().unwrap(),
+            Value::Number(Number::Float(1.234E+10))
+        );
+        assert_eq!(
+            Value::parse("1.234E-10").ok().unwrap(),
+            Value::Number(Number::Float(1.234E-10))
+        );
+        assert_eq!(
+            Value::parse("1e-10000").ok().unwrap(),
+            Value::Number(Number::Float(0.0))
+        );
 
         // error
         assert_eq!(Value::parse("+0").err().unwrap(), ParseError::InvalidValue);
@@ -242,8 +269,14 @@ mod tests {
 
     #[test]
     fn parse_root_not_singular() {
-        assert_eq!(Value::parse(" \t\r\nnull\ntrue").err().unwrap(), ParseError::RootNotSingular);
+        assert_eq!(
+            Value::parse(" \t\r\nnull\ntrue").err().unwrap(),
+            ParseError::RootNotSingular
+        );
         assert_eq!(Value::parse(" \t\r\nnull\n\r\t ").ok().unwrap(), Value::Null);
-        assert_eq!(Value::parse("null\n\r \ttrue\r \t\r").err().unwrap(), ParseError::RootNotSingular);
+        assert_eq!(
+            Value::parse("null\n\r \ttrue\r \t\r").err().unwrap(),
+            ParseError::RootNotSingular
+        );
     }
 }
