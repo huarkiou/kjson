@@ -248,6 +248,18 @@ mod tests {
             Value::parse("1e-10000").ok().unwrap(),
             Value::Number(Number::Float(0.0))
         );
+        assert_eq!(
+            Value::parse("0.01171875").ok().unwrap(),
+            Value::Number(Number::Float(0.01171875))
+        );
+        assert_eq!(
+            Value::parse("2e-1074").ok().unwrap(),
+            Value::Number(Number::Float(2.0e-1074))
+        );
+        assert_eq!(
+            Value::parse("2e-1022").ok().unwrap(),
+            Value::Number(Number::Float(2.0e-1022))
+        );
 
         // error
         assert_eq!(Value::parse("+0").err().unwrap(), ParseError::InvalidValue);
