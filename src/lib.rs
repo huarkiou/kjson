@@ -21,6 +21,7 @@ pub enum ParseError {
     ExpectValue,
     InvalidValue,
     RootNotSingular,
+    NumberTooBig,
 }
 
 impl Value {
@@ -161,9 +162,21 @@ impl Value {
         let number_str = std::str::from_utf8(&bytes[0..index_end]).unwrap();
         context.json = std::str::from_utf8(&bytes[index_end..]).unwrap();
         if is_float {
-            Ok(Value::Number(Number::Float(number_str.parse::<f64>().unwrap())))
+            match number_str.parse::<f64>() {
+                Ok(num) => {
+                    if num.is_finite() {
+                        Ok(Value::Number(Number::Float(num)))
+                    } else {
+                        Err(ParseError::NumberTooBig)
+                    }
+                }
+                Err(_) => Err(ParseError::NumberTooBig),
+            }
         } else {
-            Ok(Value::Number(Number::Int(number_str.parse::<i64>().unwrap())))
+            match number_str.parse::<i64>() {
+                Ok(num) => Ok(Value::Number(Number::Int(num))),
+                Err(_) => Err(ParseError::NumberTooBig),
+            }
         }
     }
 
@@ -274,6 +287,12 @@ mod tests {
         assert_eq!(Value::parse("NAN").err().unwrap(), ParseError::InvalidValue);
         assert_eq!(Value::parse("NaN").err().unwrap(), ParseError::InvalidValue);
         assert_eq!(Value::parse("nan").err().unwrap(), ParseError::InvalidValue);
+    }
+
+    #[test]
+    fn parse_number_too_big() {
+        assert_eq!(Value::parse("1e309").err().unwrap(), ParseError::NumberTooBig);
+        assert_eq!(Value::parse("-1e309").err().unwrap(), ParseError::NumberTooBig);
     }
 
     #[test]
