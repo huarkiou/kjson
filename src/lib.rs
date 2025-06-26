@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 
 #[derive(Debug, PartialEq)]
 pub enum Number {
@@ -30,25 +30,46 @@ pub enum ParseError {
 
 struct Context<'a> {
     bytes: &'a [u8],
-    stack: Vec<u8>,
+    stack: VecDeque<u8>,
 }
 
 impl<'a> Context<'a> {
     fn new(json: &'a str) -> Self {
         Self {
             bytes: json.as_bytes(),
-            stack: Vec::<u8>::new(),
+            stack: VecDeque::<u8>::new(),
         }
     }
 
-    fn push(&mut self, b: u8) {
-        self.stack.push(b);
+    fn len(&self) -> usize {
+        self.stack.len()
     }
 
-    fn pop_to_string(&mut self) -> String {
-        let ret = std::str::from_utf8(&self.stack).unwrap().to_owned();
-        self.stack.clear();
-        return ret;
+    fn push_bytes(&mut self, bytes: &[u8]) {
+        for &b in bytes {
+            self.stack.push_back(b);
+        }
+    }
+
+    fn push_byte(&mut self, b: u8) {
+        self.stack.push_back(b);
+    }
+
+    fn pop_bytes(&mut self, size: usize) -> Vec<u8> {
+        assert!(size <= self.stack.len());
+        let mut ret: Vec<u8> = Vec::with_capacity(size);
+        for _ in 0..size {
+            if let Some(byte) = self.stack.pop_back() {
+                ret.push(byte);
+            }
+        }
+        ret.reverse();
+        ret
+    }
+
+    fn pop_byte(&mut self) -> u8 {
+        assert!(self.stack.len() != 0);
+        self.stack.pop_back().unwrap()
     }
 }
 
@@ -241,9 +262,7 @@ impl Value {
             let mut buf = [0; 4]; // UTF-8 最多需要 4 个字节
             let bytes = ch.encode_utf8(&mut buf);
             let utf8_bytes: &[u8] = bytes.as_bytes(); // 获取 &[u8]
-            for &b in utf8_bytes.iter() {
-                context.push(b);
-            }
+            context.push_bytes(utf8_bytes);
             None
         } else {
             Some(ParseError::InvalidUnicodeSurrogate)
@@ -254,6 +273,7 @@ impl Value {
         assert_eq!(*context.bytes.first().unwrap(), b'"');
         let mut quotation_marked: bool = false;
         let mut i = 1;
+        let cur_len = context.len();
         while i < context.bytes.len() {
             let b = context.bytes[i];
             match b {
@@ -265,14 +285,14 @@ impl Value {
                     // 处理转义序列
                     if i + 1 < context.bytes.len() {
                         match context.bytes[i + 1] {
-                            b'"' => context.push(b'\"'),
-                            b'\\' => context.push(b'\\'),
-                            b'/' => context.push(b'/'),
-                            b'b' => context.push(b'\x62'),
-                            b'f' => context.push(b'\x66'),
-                            b'n' => context.push(b'\n'),
-                            b'r' => context.push(b'\r'),
-                            b't' => context.push(b'\t'),
+                            b'"' => context.push_byte(b'\"'),
+                            b'\\' => context.push_byte(b'\\'),
+                            b'/' => context.push_byte(b'/'),
+                            b'b' => context.push_byte(b'\x62'),
+                            b'f' => context.push_byte(b'\x66'),
+                            b'n' => context.push_byte(b'\n'),
+                            b'r' => context.push_byte(b'\r'),
+                            b't' => context.push_byte(b'\t'),
                             b'u' => {
                                 if i + 6 >= context.bytes.len() {
                                     return Err(ParseError::InvalidStringEscape);
@@ -319,14 +339,16 @@ impl Value {
                     if b < 0x20 {
                         return Err(ParseError::InvalidStringEscape);
                     }
-                    context.push(b);
+                    context.push_byte(b);
                     i += 1;
                 }
             }
         }
         if quotation_marked {
             context.bytes = &context.bytes[i + 1..];
-            Ok(Value::String(context.pop_to_string()))
+            Ok(Value::String(
+                String::from_utf8(context.pop_bytes(context.stack.len() - cur_len)).unwrap(),
+            ))
         } else {
             Err(ParseError::MissQuotationMark)
         }
