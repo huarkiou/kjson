@@ -24,14 +24,18 @@ pub enum ParseError {
     NumberTooBig,
 }
 
+struct Context<'a> {
+    bytes: &'a [u8],
+}
+
 impl Value {
     pub fn parse(json: &str) -> Result<Value, ParseError> {
-        let mut c: Context = Context { json };
+        let mut c: Context = Context { bytes: json.as_bytes() };
         Value::parse_whitespace(&mut c).unwrap();
         match Value::parse_value(&mut c) {
             Ok(v) => {
                 Value::parse_whitespace(&mut c).unwrap();
-                if c.json.is_empty() {
+                if c.bytes.is_empty() {
                     Ok(v)
                 } else {
                     Err(ParseError::RootNotSingular)
@@ -47,26 +51,26 @@ impl Value {
     }
 
     fn parse_whitespace(context: &mut Context) -> Result<(), ParseError> {
-        let bytes = context.json.as_bytes();
+        let bytes = context.bytes;
         for (i, &c) in bytes.iter().enumerate() {
             if !(c == b' ' || c == b'\t' || c == b'\n' || c == b'\r') {
-                context.json = std::str::from_utf8(&bytes[i..]).unwrap();
+                context.bytes = &bytes[i..];
                 return Ok(());
             }
         }
-        context.json = &context.json[context.json.len()..];
+        context.bytes = &context.bytes[context.bytes.len()..];
         Ok(())
     }
 
     fn parse_literal(context: &mut Context) -> Result<Value, ParseError> {
-        let bytes = context.json.as_bytes();
+        let bytes = context.bytes;
         match *bytes.first().unwrap() {
             b'n' => {
                 const NULL_LITERAL: &str = "null";
                 if bytes.len() >= NULL_LITERAL.len()
                     && std::str::from_utf8(&bytes[0..NULL_LITERAL.len()]).unwrap() == NULL_LITERAL
                 {
-                    context.json = std::str::from_utf8(&bytes[NULL_LITERAL.len()..]).unwrap();
+                    context.bytes = &bytes[NULL_LITERAL.len()..];
                     Ok(Value::Null)
                 } else {
                     Err(ParseError::InvalidValue)
@@ -77,7 +81,7 @@ impl Value {
                 if bytes.len() >= TRUE_LITERAL.len()
                     && std::str::from_utf8(&bytes[0..TRUE_LITERAL.len()]).unwrap() == TRUE_LITERAL
                 {
-                    context.json = std::str::from_utf8(&bytes[TRUE_LITERAL.len()..]).unwrap();
+                    context.bytes = &bytes[TRUE_LITERAL.len()..];
                     Ok(Value::Bool(true))
                 } else {
                     Err(ParseError::InvalidValue)
@@ -88,7 +92,7 @@ impl Value {
                 if bytes.len() >= FALSE_LITERAL.len()
                     && std::str::from_utf8(&bytes[0..FALSE_LITERAL.len()]).unwrap() == FALSE_LITERAL
                 {
-                    context.json = std::str::from_utf8(&bytes[FALSE_LITERAL.len()..]).unwrap();
+                    context.bytes = &bytes[FALSE_LITERAL.len()..];
                     Ok(Value::Bool(false))
                 } else {
                     Err(ParseError::InvalidValue)
@@ -113,7 +117,7 @@ impl Value {
     }
 
     fn parse_number(context: &mut Context) -> Result<Value, ParseError> {
-        let bytes = context.json.as_bytes();
+        let bytes = context.bytes;
         // assert!(bytes.first().unwrap().is_ascii_digit() || *bytes.first().unwrap() == b'-');
         let mut index_end: usize = 0;
         let mut is_float: bool = false;
@@ -159,8 +163,8 @@ impl Value {
         }
 
         // 转换为二进制返回
+        context.bytes = &bytes[index_end..];
         let number_str = std::str::from_utf8(&bytes[0..index_end]).unwrap();
-        context.json = std::str::from_utf8(&bytes[index_end..]).unwrap();
         if is_float {
             match number_str.parse::<f64>() {
                 Ok(num) => {
@@ -181,7 +185,7 @@ impl Value {
     }
 
     fn parse_value(context: &mut Context) -> Result<Value, ParseError> {
-        let bytes = context.json.as_bytes();
+        let bytes = context.bytes;
         match bytes.first() {
             Some(byte) => match *byte {
                 b'n' | b't' | b'f' => Value::parse_literal(context),
@@ -190,10 +194,6 @@ impl Value {
             None => Err(ParseError::ExpectValue),
         }
     }
-}
-
-struct Context<'a> {
-    json: &'a str,
 }
 
 #[cfg(test)]
