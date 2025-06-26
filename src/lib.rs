@@ -24,6 +24,8 @@ pub enum ParseError {
     NumberTooBig,
     MissQuotationMark,
     InvalidStringEscape,
+    InvalidUnicodeHex,
+    InvalidUnicodeSurrogate,
 }
 
 struct Context<'a> {
@@ -218,6 +220,36 @@ impl Value {
         }
     }
 
+    fn hex4_to_u32(hex4: &[u8]) -> Option<u32> {
+        assert_eq!(hex4.len(), 4);
+        let mut value = 0u32;
+        for &b in hex4 {
+            let digit = match b {
+                b'0'..=b'9' => b - b'0',
+                b'a'..=b'f' => b - b'a' + 10,
+                b'A'..=b'F' => b - b'A' + 10,
+                _ => return None, // 非法字符
+            };
+
+            value = (value << 4) | u32::from(digit);
+        }
+        Some(value)
+    }
+
+    fn encode_utf8(context: &mut Context, c: u32) -> Option<ParseError> {
+        if let Some(ch) = char::from_u32(c) {
+            let mut buf = [0; 4]; // UTF-8 最多需要 4 个字节
+            let bytes = ch.encode_utf8(&mut buf);
+            let utf8_bytes: &[u8] = bytes.as_bytes(); // 获取 &[u8]
+            for &b in utf8_bytes.iter() {
+                context.push(b);
+            }
+            None
+        } else {
+            Some(ParseError::InvalidUnicodeSurrogate)
+        }
+    }
+
     fn parse_string(context: &mut Context) -> Result<Value, ParseError> {
         assert_eq!(*context.bytes.first().unwrap(), b'"');
         let mut quotation_marked: bool = false;
@@ -233,46 +265,54 @@ impl Value {
                     // 处理转义序列
                     if i + 1 < context.bytes.len() {
                         match context.bytes[i + 1] {
-                            b'"' => {
-                                i += 2;
-                                context.push(b'\"');
-                            }
-                            b'\\' => {
-                                i += 2;
-                                context.push(b'\\');
-                            }
-                            b'/' => {
-                                i += 2;
-                                context.push(b'/');
-                            }
-                            b'b' => {
-                                i += 2;
-                                context.push(b'\x62');
-                            }
-                            b'f' => {
-                                i += 2;
-                                context.push(b'\x66');
-                            }
-                            b'n' => {
-                                i += 2;
-                                context.push(b'\n');
-                            }
-                            b'r' => {
-                                i += 2;
-                                context.push(b'\r');
-                            }
-                            b't' => {
-                                i += 2;
-                                context.push(b'\t');
-                            }
+                            b'"' => context.push(b'\"'),
+                            b'\\' => context.push(b'\\'),
+                            b'/' => context.push(b'/'),
+                            b'b' => context.push(b'\x62'),
+                            b'f' => context.push(b'\x66'),
+                            b'n' => context.push(b'\n'),
+                            b'r' => context.push(b'\r'),
+                            b't' => context.push(b'\t'),
                             b'u' => {
                                 if i + 6 >= context.bytes.len() {
                                     return Err(ParseError::InvalidStringEscape);
                                 }
-                                i += 6;
+                                match Value::hex4_to_u32(&context.bytes[i + 2..i + 6]) {
+                                    Some(high_surrogate) => {
+                                        if high_surrogate >= 0xD800 && high_surrogate <= 0xDBFF {
+                                            // 代码对的高代理项（high surrogate）
+                                            if i + 12 < context.bytes.len()
+                                                && (context.bytes[i + 6] == b'\\' && context.bytes[i + 7] == b'u')
+                                            {
+                                                match Value::hex4_to_u32(&context.bytes[i + 8..i + 12]) {
+                                                    Some(low_surrogate) => {
+                                                        if let Some(e) = Value::encode_utf8(
+                                                            context,
+                                                            0x10000
+                                                                + (high_surrogate - 0xD800) * 0x400
+                                                                + (low_surrogate - 0xDC00),
+                                                        ) {
+                                                            return Err(e);
+                                                        }
+                                                    }
+                                                    None => return Err(ParseError::InvalidUnicodeHex),
+                                                }
+                                                i += 10;
+                                            } else {
+                                                return Err(ParseError::InvalidUnicodeSurrogate);
+                                            }
+                                        } else if let Some(e) = Value::encode_utf8(context, high_surrogate) {
+                                            return Err(e);
+                                        } else {
+                                            i += 4;
+                                        }
+                                    }
+                                    None => return Err(ParseError::InvalidUnicodeHex),
+                                }
                             }
                             _ => return Err(ParseError::InvalidStringEscape),
                         }
+                        i += 2;
                     }
                 }
                 _ => {
@@ -436,6 +476,26 @@ mod tests {
         assert_eq!(
             Value::parse(r#""\" \\ / \b \f \n \r \t""#).ok().unwrap(),
             Value::String("\" \\ / \x62 \x66 \n \r \t".to_string())
+        );
+        assert_eq!(
+            Value::parse(r#""\u0024""#).ok().unwrap(),
+            Value::String("$".to_string())
+        );
+        assert_eq!(
+            Value::parse(r#""\u00A2""#).ok().unwrap(),
+            Value::String("¢".to_string())
+        );
+        assert_eq!(
+            Value::parse(r#""\u20AC""#).ok().unwrap(),
+            Value::String("€".to_string())
+        );
+        assert_eq!(
+            Value::parse(r#""\uD834\uDD1E""#).ok().unwrap(),
+            Value::String("𝄞".to_string())
+        );
+        assert_eq!(
+            Value::parse(r#""\ud834\udd1e""#).ok().unwrap(),
+            Value::String("𝄞".to_string())
         );
     }
 
