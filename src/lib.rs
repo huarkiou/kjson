@@ -1,6 +1,12 @@
 use std::collections::BTreeMap;
 
 #[derive(Debug, PartialEq)]
+pub enum Number {
+    Int(i64),
+    Float(f64),
+}
+
+#[derive(Debug, PartialEq)]
 pub enum Value {
     Null,
     Bool(bool),
@@ -10,27 +16,43 @@ pub enum Value {
     Object(BTreeMap<String, Value>),
 }
 
-#[derive(Debug, PartialEq)]
-pub enum Number {
-    Int(i64),
-    Float(f64),
-}
-
 #[derive(PartialEq, Debug)]
 pub enum ParseError {
     ExpectValue,
     InvalidValue,
     RootNotSingular,
     NumberTooBig,
+    MissQuotationMark,
+    InvalidStringEscape,
 }
 
 struct Context<'a> {
     bytes: &'a [u8],
+    stack: Vec<u8>,
+}
+
+impl<'a> Context<'a> {
+    fn new(json: &'a str) -> Self {
+        Self {
+            bytes: json.as_bytes(),
+            stack: Vec::<u8>::new(),
+        }
+    }
+
+    fn push(&mut self, b: u8) {
+        self.stack.push(b);
+    }
+
+    fn pop_to_string(&mut self) -> String {
+        let ret = std::str::from_utf8(&self.stack).unwrap().to_owned();
+        self.stack.clear();
+        return ret;
+    }
 }
 
 impl Value {
     pub fn parse(json: &str) -> Result<Value, ParseError> {
-        let mut c: Context = Context { bytes: json.as_bytes() };
+        let mut c: Context = Context::new(json);
         Value::parse_whitespace(&mut c).unwrap();
         match Value::parse_value(&mut c) {
             Ok(v) => {
@@ -60,6 +82,18 @@ impl Value {
         }
         context.bytes = &context.bytes[context.bytes.len()..];
         Ok(())
+    }
+
+    fn parse_value(context: &mut Context) -> Result<Value, ParseError> {
+        let bytes = context.bytes;
+        match bytes.first() {
+            Some(byte) => match *byte {
+                b'n' | b't' | b'f' => Value::parse_literal(context),
+                b'"' => Value::parse_string(context),
+                _ => Value::parse_number(context),
+            },
+            None => Err(ParseError::ExpectValue),
+        }
     }
 
     fn parse_literal(context: &mut Context) -> Result<Value, ParseError> {
@@ -184,14 +218,77 @@ impl Value {
         }
     }
 
-    fn parse_value(context: &mut Context) -> Result<Value, ParseError> {
-        let bytes = context.bytes;
-        match bytes.first() {
-            Some(byte) => match *byte {
-                b'n' | b't' | b'f' => Value::parse_literal(context),
-                _ => Value::parse_number(context),
-            },
-            None => Err(ParseError::ExpectValue),
+    fn parse_string(context: &mut Context) -> Result<Value, ParseError> {
+        assert_eq!(*context.bytes.first().unwrap(), b'"');
+        let mut quotation_marked: bool = false;
+        let mut i = 1;
+        while i < context.bytes.len() {
+            let b = context.bytes[i];
+            match b {
+                b'"' => {
+                    quotation_marked = true;
+                    break;
+                }
+                b'\\' => {
+                    // 处理转义序列
+                    if i + 1 < context.bytes.len() {
+                        match context.bytes[i + 1] {
+                            b'"' => {
+                                i += 2;
+                                context.push(b'\"');
+                            }
+                            b'\\' => {
+                                i += 2;
+                                context.push(b'\\');
+                            }
+                            b'/' => {
+                                i += 2;
+                                context.push(b'/');
+                            }
+                            b'b' => {
+                                i += 2;
+                                context.push(b'\x62');
+                            }
+                            b'f' => {
+                                i += 2;
+                                context.push(b'\x66');
+                            }
+                            b'n' => {
+                                i += 2;
+                                context.push(b'\n');
+                            }
+                            b'r' => {
+                                i += 2;
+                                context.push(b'\r');
+                            }
+                            b't' => {
+                                i += 2;
+                                context.push(b'\t');
+                            }
+                            b'u' => {
+                                if i + 6 >= context.bytes.len() {
+                                    return Err(ParseError::InvalidStringEscape);
+                                }
+                                i += 6;
+                            }
+                            _ => return Err(ParseError::InvalidStringEscape),
+                        }
+                    }
+                }
+                _ => {
+                    if b < 0x20 {
+                        return Err(ParseError::InvalidStringEscape);
+                    }
+                    context.push(b);
+                    i += 1;
+                }
+            }
+        }
+        if quotation_marked {
+            context.bytes = &context.bytes[i + 1..];
+            Ok(Value::String(context.pop_to_string()))
+        } else {
+            Err(ParseError::MissQuotationMark)
         }
     }
 }
@@ -323,6 +420,23 @@ mod tests {
         assert_eq!(Value::parse("NAN").err().unwrap(), ParseError::InvalidValue);
         assert_eq!(Value::parse("NaN").err().unwrap(), ParseError::InvalidValue);
         assert_eq!(Value::parse("nan").err().unwrap(), ParseError::InvalidValue);
+    }
+
+    #[test]
+    fn parse_string() {
+        assert_eq!(Value::parse(r#""""#).ok().unwrap(), Value::String("".to_string()));
+        assert_eq!(
+            Value::parse(r#""Hello""#).ok().unwrap(),
+            Value::String("Hello".to_string())
+        );
+        assert_eq!(
+            Value::parse(r#""Hello\nWorld""#).ok().unwrap(),
+            Value::String("Hello\nWorld".to_string())
+        );
+        assert_eq!(
+            Value::parse(r#""\" \\ / \b \f \n \r \t""#).ok().unwrap(),
+            Value::String("\" \\ / \x62 \x66 \n \r \t".to_string())
+        );
     }
 
     #[test]
