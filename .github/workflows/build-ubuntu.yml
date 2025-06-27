@@ -3,9 +3,9 @@ name: Build On Ubuntu
 on:
   push:
     branches: [ "main" ]
-      paths-ignore:
-        - 'readme.md'
-        - '.gitignore'
+    paths-ignore:
+      - 'readme.md'
+      - '.gitignore'
   pull_request:
     branches: [ "main" ]
 
