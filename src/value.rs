@@ -1,7 +1,7 @@
 use crate::context::Context;
+use crate::dict::Dict;
 use crate::error::ParseError;
 use crate::number::Number;
-use std::collections::BTreeMap;
 
 #[derive(Debug)]
 pub enum Value {
@@ -10,12 +10,12 @@ pub enum Value {
     Number(Number),
     String(String),
     Array(Vec<Value>),
-    Object(BTreeMap<String, Value>),
+    Object(Dict<String, Value>),
 }
 
-impl ToString for Value {
-    fn to_string(&self) -> String {
-        Value::stringify_value(self)
+impl std::fmt::Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", Value::stringify_value(self))
     }
 }
 
@@ -36,17 +36,7 @@ impl PartialEq for Value {
                 }
                 result
             }
-            (Self::Object(l0), Self::Object(r0)) => {
-                let mut result = true;
-                if l0.len() != r0.len() {
-                    result = false;
-                } else {
-                    for key in l0.keys() {
-                        result = result && (l0[key] == r0[key]);
-                    }
-                }
-                result
-            }
+            (Self::Object(l0), Self::Object(r0)) => l0 == r0,
             _ => core::mem::discriminant(self) == core::mem::discriminant(other),
         }
     }
@@ -199,9 +189,8 @@ impl Value {
         context.bytes = &bytes[index_end..];
         let number_str = std::str::from_utf8(&bytes[0..index_end]).unwrap();
         if !is_float {
-            match number_str.parse::<i64>() {
-                Ok(num) => return Ok(Value::Number(Number::Int(num))),
-                Err(_) => (),
+            if let Ok(num) = number_str.parse::<i64>() {
+                return Ok(Value::Number(Number::Int(num)));
             }
         }
         match number_str.parse::<f64>() {
@@ -334,7 +323,7 @@ impl Value {
 
     fn parse_string(context: &mut Context) -> Result<Value, ParseError> {
         assert_eq!(*context.bytes.first().unwrap(), b'"');
-        Value::parse_string_raw(context).map(|s| Value::String(s))
+        Value::parse_string_raw(context).map(Value::String)
     }
 
     fn parse_array(context: &mut Context) -> Result<Value, ParseError> {
@@ -370,7 +359,7 @@ impl Value {
         assert_eq!(context.step().unwrap(), b'{');
         Value::parse_whitespace(context).unwrap();
 
-        let mut object: BTreeMap<String, Value> = BTreeMap::new();
+        let mut object: Dict<String, Value> = Dict::new();
         if *context.bytes.first().unwrap() == b'}' {
             context.step();
             return Ok(Value::Object(object));
@@ -454,7 +443,7 @@ impl Value {
                 }
                 _ => {
                     if byte < 0x20 {
-                        for &c in format!("\\u{:04X}", byte).as_bytes() {
+                        for &c in format!("\\u{byte:04X}").as_bytes() {
                             stack.push(c);
                         }
                     } else {
@@ -468,7 +457,7 @@ impl Value {
         std::str::from_utf8(&stack).unwrap().to_string()
     }
 
-    fn stringify_array(arr: &Vec<Value>) -> String {
+    fn stringify_array(arr: &[Value]) -> String {
         let mut result = String::from("[");
         match arr.len() {
             0 => (),
@@ -485,7 +474,7 @@ impl Value {
         result
     }
 
-    fn stringify_object(object: &BTreeMap<String, Value>) -> String {
+    fn stringify_object(object: &Dict<String, Value>) -> String {
         let mut result = String::from("{");
         match object.len() {
             0 => (),
@@ -715,7 +704,7 @@ mod tests {
 
     #[test]
     fn parse_object() {
-        let mut map = BTreeMap::new();
+        let mut map = Dict::new();
         map.insert("n".to_string(), Value::Null);
         map.insert("f".to_string(), Value::Bool(false));
         map.insert("t".to_string(), Value::Bool(true));
@@ -729,7 +718,7 @@ mod tests {
                 Value::Number(Number::Int(3)),
             ]),
         );
-        let mut submap = BTreeMap::new();
+        let mut submap = Dict::new();
         submap.insert("1".to_string(), Value::Number(Number::Int(1)));
         submap.insert("2".to_string(), Value::Number(Number::Int(2)));
         submap.insert("3".to_string(), Value::Number(Number::Int(3)));
