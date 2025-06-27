@@ -61,6 +61,9 @@ pub enum ParseError {
     InvalidUnicodeHex,
     InvalidUnicodeSurrogate,
     MissCommaOrSquareBracket,
+    MissKey,
+    MissColon,
+    MissCommaOrCurlyBracket,
 }
 
 struct Context<'a> {
@@ -148,6 +151,7 @@ impl Value {
                 b'n' | b't' | b'f' => Value::parse_literal(context),
                 b'"' => Value::parse_string(context),
                 b'[' => Value::parse_array(context),
+                b'{' => Value::parse_object(context),
                 _ => Value::parse_number(context),
             },
             None => Err(ParseError::ExpectValue),
@@ -305,7 +309,9 @@ impl Value {
     }
 
     fn parse_string(context: &mut Context) -> Result<Value, ParseError> {
-        assert_eq!(*context.bytes.first().unwrap(), b'"');
+        if context.bytes.len() < 2 || *context.bytes.first().unwrap() != b'"' {
+            return Err(ParseError::MissQuotationMark);
+        }
         let mut quotation_marked: bool = false;
         let mut i = 1;
         let cur_len = context.len();
@@ -417,6 +423,48 @@ impl Value {
                     _ => return Err(ParseError::MissCommaOrSquareBracket),
                 },
                 None => return Err(ParseError::MissCommaOrSquareBracket),
+            }
+        }
+    }
+
+    fn parse_object(context: &mut Context) -> Result<Value, ParseError> {
+        assert_eq!(context.step().unwrap(), b'{');
+        Value::parse_whitespace(context).unwrap();
+
+        let mut object: BTreeMap<String, Value> = BTreeMap::new();
+        if *context.bytes.first().unwrap() == b'}' {
+            context.step();
+            return Ok(Value::Object(object));
+        }
+        loop {
+            // parse key
+            if let Ok(Value::String(str)) = Value::parse_string(context) {
+                let key = str;
+                // parse colon(:)
+                Value::parse_whitespace(context).unwrap();
+                if let Some(b':') = context.step() {
+                } else {
+                    return Err(ParseError::MissColon);
+                }
+                // parse value
+                Value::parse_whitespace(context).unwrap();
+                match Value::parse_value(context) {
+                    Ok(v) => {
+                        object.insert(key, v);
+                    }
+                    Err(_) => return Err(ParseError::InvalidValue),
+                }
+                // parse ws [comma | right-curly-brace] ws }
+                Value::parse_whitespace(context).unwrap();
+                match context.step() {
+                    Some(b',') => {
+                        Value::parse_whitespace(context).unwrap();
+                    }
+                    Some(b'}') => return Ok(Value::Object(object)),
+                    _ => return Err(ParseError::MissCommaOrCurlyBracket),
+                }
+            } else {
+                return Err(ParseError::MissKey);
             }
         }
     }
@@ -768,5 +816,43 @@ mod tests {
             ParseError::MissCommaOrSquareBracket
         );
         assert_eq!(Value::parse("[[]").err().unwrap(), ParseError::MissCommaOrSquareBracket);
+    }
+
+    #[test]
+    fn parse_miss_key() {
+        assert_eq!(Value::parse("{:1,").err().unwrap(), ParseError::MissKey);
+        assert_eq!(Value::parse("{1:1,").err().unwrap(), ParseError::MissKey);
+        assert_eq!(Value::parse("{true:1,").err().unwrap(), ParseError::MissKey);
+        assert_eq!(Value::parse("{false:1,").err().unwrap(), ParseError::MissKey);
+        assert_eq!(Value::parse("{null:1,").err().unwrap(), ParseError::MissKey);
+        assert_eq!(Value::parse("{[]:1,").err().unwrap(), ParseError::MissKey);
+        assert_eq!(Value::parse("{{}:1,").err().unwrap(), ParseError::MissKey);
+        assert_eq!(Value::parse(r#"{"a":1,"#).err().unwrap(), ParseError::MissKey);
+    }
+
+    #[test]
+    fn parse_miss_colon() {
+        assert_eq!(Value::parse(r#"{"a""#).err().unwrap(), ParseError::MissColon);
+        assert_eq!(Value::parse(r#"{"a","b"}"#).err().unwrap(), ParseError::MissColon);
+    }
+
+    #[test]
+    fn parse_miss_comma_or_curly_bracket() {
+        assert_eq!(
+            Value::parse(r#"{"a":1"#).err().unwrap(),
+            ParseError::MissCommaOrCurlyBracket
+        );
+        assert_eq!(
+            Value::parse(r#"{"a":1]"#).err().unwrap(),
+            ParseError::MissCommaOrCurlyBracket
+        );
+        assert_eq!(
+            Value::parse(r#"{"a":1 "b"}"#).err().unwrap(),
+            ParseError::MissCommaOrCurlyBracket
+        );
+        assert_eq!(
+            Value::parse(r#"{"a":{}"#).err().unwrap(),
+            ParseError::MissCommaOrCurlyBracket
+        );
     }
 }
