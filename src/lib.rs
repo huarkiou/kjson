@@ -308,7 +308,7 @@ impl Value {
         }
     }
 
-    fn parse_string(context: &mut Context) -> Result<Value, ParseError> {
+    fn parse_string_raw(context: &mut Context) -> Result<String, ParseError> {
         if context.bytes.len() < 2 || *context.bytes.first().unwrap() != b'"' {
             return Err(ParseError::MissQuotationMark);
         }
@@ -390,12 +390,15 @@ impl Value {
         }
         if quotation_marked {
             context.bytes = &context.bytes[i + 1..];
-            Ok(Value::String(
-                String::from_utf8(context.pop_bytes(context.stack.len() - cur_len)).unwrap(),
-            ))
+            Ok(String::from_utf8(context.pop_bytes(context.stack.len() - cur_len)).unwrap())
         } else {
             Err(ParseError::MissQuotationMark)
         }
+    }
+
+    fn parse_string(context: &mut Context) -> Result<Value, ParseError> {
+        assert_eq!(*context.bytes.first().unwrap(), b'"');
+        Value::parse_string_raw(context).map(|s| Value::String(s))
     }
 
     fn parse_array(context: &mut Context) -> Result<Value, ParseError> {
@@ -438,7 +441,7 @@ impl Value {
         }
         loop {
             // parse key
-            if let Ok(Value::String(str)) = Value::parse_string(context) {
+            if let Ok(str) = Value::parse_string_raw(context) {
                 let key = str;
                 // parse colon(:)
                 Value::parse_whitespace(context).unwrap();
