@@ -4,7 +4,7 @@ use std::{
         BTreeMap,
         btree_map::{Iter, Keys},
     },
-    ops::Index,
+    ops::{Index, IndexMut},
 };
 
 #[derive(Debug)]
@@ -39,6 +39,16 @@ where
 
     fn index(&self, key: &Q) -> &Self::Output {
         &self.data[key]
+    }
+}
+
+impl<K, Q, V> IndexMut<&Q> for Dict<K, V>
+where
+    K: Borrow<Q> + Ord,
+    Q: Ord + ?Sized,
+{
+    fn index_mut(&mut self, key: &Q) -> &mut Self::Output {
+        self.data.get_mut(key).unwrap()
     }
 }
 

@@ -2,6 +2,8 @@ use crate::context::Context;
 use crate::dict::Dict;
 use crate::error::ParseError;
 use crate::number::Number;
+use std::ops::Index;
+use std::ops::IndexMut;
 
 #[derive(Debug)]
 pub enum Value {
@@ -11,6 +13,50 @@ pub enum Value {
     String(String),
     Array(Vec<Value>),
     Object(Dict<String, Value>),
+}
+
+impl Index<&str> for Value {
+    type Output = Value;
+
+    fn index(&self, key: &str) -> &Self::Output {
+        if let Value::Object(dict) = self {
+            &dict[key]
+        } else {
+            panic!("Only Value::Object() can be accessed by key")
+        }
+    }
+}
+
+impl IndexMut<&str> for Value {
+    fn index_mut(&mut self, key: &str) -> &mut Self::Output {
+        if let Value::Object(dict) = self {
+            &mut dict[key]
+        } else {
+            panic!("Only Value::Object() can be accessed by key")
+        }
+    }
+}
+
+impl Index<usize> for Value {
+    type Output = Value;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        if let Value::Array(dict) = self {
+            &dict[index]
+        } else {
+            panic!("Only Value::Array() can be accessed by index")
+        }
+    }
+}
+
+impl IndexMut<usize> for Value {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        if let Value::Array(dict) = self {
+            &mut dict[index]
+        } else {
+            panic!("Only Value::Array() can be accessed by index")
+        }
+    }
 }
 
 impl std::fmt::Display for Value {
@@ -999,6 +1045,101 @@ mod tests {
         test_roundtrip("{}");
         test_roundtrip(
             "{\"n\":null,\"f\":false,\"t\":true,\"i\":123,\"s\":\"abc\",\"a\":[1,2,3],\"o\":{\"1\":1,\"2\":2,\"3\":3}}",
+        );
+    }
+
+    #[test]
+    fn access_array() {
+        let mut v = Value::parse(r#"[ null , false , true , 123 , "abc" ]"#).ok().unwrap();
+        assert_eq!(
+            v,
+            Value::Array(vec![
+                Value::Null,
+                Value::Bool(false),
+                Value::Bool(true),
+                Value::Number(Number::Int(123)),
+                Value::String("abc".to_string())
+            ])
+        );
+        v[1] = Value::Bool(true);
+        v[2] = Value::Bool(false);
+        v[3] = Value::Number(Number::Int(321));
+        v[4] = Value::String("cba".to_string());
+        assert_eq!(
+            v,
+            Value::Array(vec![
+                Value::Null,
+                Value::Bool(true),
+                Value::Bool(false),
+                Value::Number(Number::Int(321)),
+                Value::String("cba".to_string())
+            ])
+        );
+    }
+
+    #[test]
+    fn access_object() {
+        let mut map = Dict::new();
+        map.insert("n".to_string(), Value::Null);
+        map.insert("f".to_string(), Value::Bool(false));
+        map.insert("t".to_string(), Value::Bool(true));
+        map.insert("i".to_string(), Value::Number(Number::Int(123)));
+        map.insert("s".to_string(), Value::String("abc".to_string()));
+        map.insert(
+            "a".to_string(),
+            Value::Array(vec![
+                Value::Number(Number::Int(1)),
+                Value::Number(Number::Int(2)),
+                Value::Number(Number::Int(3)),
+            ]),
+        );
+        let mut submap = Dict::new();
+        submap.insert("1".to_string(), Value::Number(Number::Int(1)));
+        submap.insert("2".to_string(), Value::Number(Number::Int(2)));
+        submap.insert("3".to_string(), Value::Number(Number::Int(3)));
+        map.insert("o".to_string(), Value::Object(submap));
+        let object = Value::Object(map);
+
+        let mut v = Value::parse(
+            r##"
+        {
+        "n" : null ,
+        "f" : false ,
+        "t" : true ,
+        "i" : 123 , 
+        "s" : "abc", 
+        "a" : [ 1, 2, 3 ],
+        "o" : { "1" : 1, "2" : 2, "3" : 3 }
+        }
+            "##,
+        )
+        .ok()
+        .unwrap();
+
+        assert_eq!(v, object);
+
+        v["f"] = Value::Bool(true);
+        v["t"] = Value::Bool(false);
+        v["i"] = Value::Number(Number::Int(321));
+        v["a"][1] = Value::Number(Number::Int(-2));
+
+        assert_eq!(
+            v,
+            Value::parse(
+                r##"
+        {
+        "n" : null ,
+        "f" : true ,
+        "t" : false ,
+        "i" : 321 , 
+        "s" : "abc", 
+        "a" : [ 1, -2, 3 ],
+        "o" : { "1" : 1, "2" : 2, "3" : 3 }
+        }
+            "##,
+            )
+            .ok()
+            .unwrap()
         );
     }
 }
