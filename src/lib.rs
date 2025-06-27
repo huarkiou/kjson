@@ -6,7 +6,7 @@ pub enum Number {
     Float(f64),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub enum Value {
     Null,
     Bool(bool),
@@ -14,6 +14,39 @@ pub enum Value {
     String(String),
     Array(Vec<Value>),
     Object(BTreeMap<String, Value>),
+}
+
+impl PartialEq for Value {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Bool(l0), Self::Bool(r0)) => l0 == r0,
+            (Self::Number(l0), Self::Number(r0)) => l0 == r0,
+            (Self::String(l0), Self::String(r0)) => l0 == r0,
+            (Self::Array(l0), Self::Array(r0)) => {
+                let mut result = true;
+                if l0.len() != r0.len() {
+                    result = false;
+                } else {
+                    for i in 0..l0.len() {
+                        result = result && (l0[i] == r0[i]);
+                    }
+                }
+                result
+            }
+            (Self::Object(l0), Self::Object(r0)) => {
+                let mut result = true;
+                if l0.len() != r0.len() {
+                    result = false;
+                } else {
+                    for key in l0.keys() {
+                        result = result && (l0[key] == r0[key]);
+                    }
+                }
+                result
+            }
+            _ => core::mem::discriminant(self) == core::mem::discriminant(other),
+        }
+    }
 }
 
 #[derive(PartialEq, Debug)]
@@ -26,6 +59,7 @@ pub enum ParseError {
     InvalidStringEscape,
     InvalidUnicodeHex,
     InvalidUnicodeSurrogate,
+    MissCommaOrSquareBracket,
 }
 
 struct Context<'a> {
@@ -39,6 +73,12 @@ impl<'a> Context<'a> {
             bytes: json.as_bytes(),
             stack: VecDeque::<u8>::new(),
         }
+    }
+
+    fn step(&mut self) -> Option<u8> {
+        let &b = self.bytes.first()?;
+        self.bytes = &self.bytes[1..];
+        Some(b)
     }
 
     fn len(&self) -> usize {
@@ -59,7 +99,7 @@ impl<'a> Context<'a> {
         let len = self.stack.len();
         if size <= len {
             let removed: Vec<u8> = self.stack.drain(len - size..).collect();
-            return removed;
+            removed
         } else {
             panic!("Not enough elements in VecDeque");
         }
@@ -106,6 +146,7 @@ impl Value {
             Some(byte) => match *byte {
                 b'n' | b't' | b'f' => Value::parse_literal(context),
                 b'"' => Value::parse_string(context),
+                b'[' => Value::parse_array(context),
                 _ => Value::parse_number(context),
             },
             None => Err(ParseError::ExpectValue),
@@ -154,7 +195,7 @@ impl Value {
 
     fn skip_following_digits(bytes: &[u8], start: usize) -> usize {
         if start >= bytes.len() {
-            return 0 as usize;
+            return 0_usize;
         }
         let mut count: usize = 0;
         for &b in bytes[start..].iter() {
@@ -163,7 +204,7 @@ impl Value {
             }
             count += 1;
         }
-        return count;
+        count
     }
 
     fn parse_number(context: &mut Context) -> Result<Value, ParseError> {
@@ -292,7 +333,7 @@ impl Value {
                                 }
                                 match Value::hex4_to_u32(&context.bytes[i + 2..i + 6]) {
                                     Some(high_surrogate) => {
-                                        if high_surrogate >= 0xD800 && high_surrogate <= 0xDBFF {
+                                        if (0xD800..=0xDBFF).contains(&high_surrogate) {
                                             // 代码对的高代理项（high surrogate）
                                             if i + 12 < context.bytes.len()
                                                 && (context.bytes[i + 6] == b'\\' && context.bytes[i + 7] == b'u')
@@ -344,6 +385,35 @@ impl Value {
             ))
         } else {
             Err(ParseError::MissQuotationMark)
+        }
+    }
+
+    fn parse_array(context: &mut Context) -> Result<Value, ParseError> {
+        assert_eq!(context.step().unwrap(), b'[');
+        Value::parse_whitespace(context).unwrap();
+
+        let mut arr: Vec<Value> = Vec::new();
+
+        if *context.bytes.first().unwrap() == b']' {
+            context.step();
+            return Ok(Value::Array(arr));
+        }
+
+        loop {
+            match Value::parse_value(context) {
+                Ok(v) => arr.push(v),
+                Err(e) => return Err(e),
+            }
+            Value::parse_whitespace(context).unwrap();
+            let next_byte = context.step();
+            match next_byte {
+                Some(b) => match b {
+                    b',' => Value::parse_whitespace(context).unwrap(),
+                    b']' => return Ok(Value::Array(arr)),
+                    _ => return Err(ParseError::MissCommaOrSquareBracket),
+                },
+                None => return Err(ParseError::MissCommaOrSquareBracket),
+            }
         }
     }
 }
@@ -511,6 +581,46 @@ mod tests {
         assert_eq!(
             Value::parse(r#""\ud834\udd1e""#).ok().unwrap(),
             Value::String("𝄞".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_array() {
+        let result = Value::parse(r#"[ ]"#);
+        assert!(result.is_ok());
+        match result.ok().unwrap() {
+            Value::Array(arr) => {
+                assert!(true);
+                assert_eq!(arr.len(), 0);
+            }
+            _ => assert!(false),
+        };
+
+        assert_eq!(
+            Value::parse(r#"[ null , false , true , 123 , "abc" ]"#).ok().unwrap(),
+            Value::Array(vec![
+                Value::Null,
+                Value::Bool(false),
+                Value::Bool(true),
+                Value::Number(Number::Int(123)),
+                Value::String("abc".to_string())
+            ])
+        );
+
+        assert_eq!(
+            Value::parse(r#"[ [ ] , [ 0 ] , [ 0 , 1 ] , [ 0 , 1 , 2 ] ]"#)
+                .ok()
+                .unwrap(),
+            Value::Array(vec![
+                Value::Array(Vec::new()),
+                Value::Array(vec![Value::Number(Number::Int(0))]),
+                Value::Array(vec![Value::Number(Number::Int(0)), Value::Number(Number::Int(1))]),
+                Value::Array(vec![
+                    Value::Number(Number::Int(0)),
+                    Value::Number(Number::Int(1)),
+                    Value::Number(Number::Int(2))
+                ]),
+            ])
         );
     }
 
