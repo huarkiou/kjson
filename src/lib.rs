@@ -56,20 +56,13 @@ impl<'a> Context<'a> {
     }
 
     fn pop_bytes(&mut self, size: usize) -> Vec<u8> {
-        assert!(size <= self.stack.len());
-        let mut ret: Vec<u8> = Vec::with_capacity(size);
-        for _ in 0..size {
-            if let Some(byte) = self.stack.pop_back() {
-                ret.push(byte);
-            }
+        let len = self.stack.len();
+        if size <= len {
+            let removed: Vec<u8> = self.stack.drain(len - size..).collect();
+            return removed;
+        } else {
+            panic!("Not enough elements in VecDeque");
         }
-        ret.reverse();
-        ret
-    }
-
-    fn pop_byte(&mut self) -> u8 {
-        assert!(self.stack.len() != 0);
-        self.stack.pop_back().unwrap()
     }
 }
 
