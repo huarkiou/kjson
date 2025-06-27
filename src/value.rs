@@ -88,6 +88,8 @@ impl PartialEq for Value {
     }
 }
 
+impl Eq for Value {}
+
 impl Value {
     pub fn parse(json: &str) -> Result<Value, ParseError> {
         let mut c: Context = Context::new(json);
