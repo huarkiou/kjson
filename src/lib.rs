@@ -57,6 +57,7 @@ pub enum ParseError {
     NumberTooBig,
     MissQuotationMark,
     InvalidStringEscape,
+    InvalidStringChar,
     InvalidUnicodeHex,
     InvalidUnicodeSurrogate,
     MissCommaOrSquareBracket,
@@ -329,7 +330,7 @@ impl Value {
                             b't' => context.push_byte(b'\t'),
                             b'u' => {
                                 if i + 6 >= context.bytes.len() {
-                                    return Err(ParseError::InvalidStringEscape);
+                                    return Err(ParseError::InvalidUnicodeHex);
                                 }
                                 match Value::hex4_to_u32(&context.bytes[i + 2..i + 6]) {
                                     Some(high_surrogate) => {
@@ -340,6 +341,9 @@ impl Value {
                                             {
                                                 match Value::hex4_to_u32(&context.bytes[i + 8..i + 12]) {
                                                     Some(low_surrogate) => {
+                                                        if !(0xDC00..=0xDFFF).contains(&low_surrogate) {
+                                                            return Err(ParseError::InvalidUnicodeSurrogate);
+                                                        }
                                                         if let Some(e) = Value::encode_utf8(
                                                             context,
                                                             0x10000
@@ -371,7 +375,7 @@ impl Value {
                 }
                 _ => {
                     if b < 0x20 {
-                        return Err(ParseError::InvalidStringEscape);
+                        return Err(ParseError::InvalidStringChar);
                     }
                     context.push_byte(b);
                     i += 1;
@@ -448,7 +452,6 @@ mod tests {
 
     #[test]
     fn parse_number() {
-        // ok
         assert_eq!(Value::parse("0").ok().unwrap(), Value::Number(Number::Int(0)));
         assert_eq!(Value::parse("-0").ok().unwrap(), Value::Number(Number::Int(0)));
         assert_eq!(Value::parse("1").ok().unwrap(), Value::Number(Number::Int(1)));
@@ -534,17 +537,6 @@ mod tests {
             Value::parse("-1.7976931348623157e+308").ok().unwrap(),
             Value::Number(Number::Float(-1.7976931348623157e+308))
         );
-
-        // error
-        assert_eq!(Value::parse("+0").err().unwrap(), ParseError::InvalidValue);
-        assert_eq!(Value::parse("+1").err().unwrap(), ParseError::InvalidValue);
-        assert_eq!(Value::parse(".123").err().unwrap(), ParseError::InvalidValue);
-        assert_eq!(Value::parse("1.").err().unwrap(), ParseError::InvalidValue);
-        assert_eq!(Value::parse("INF").err().unwrap(), ParseError::InvalidValue);
-        assert_eq!(Value::parse("inf").err().unwrap(), ParseError::InvalidValue);
-        assert_eq!(Value::parse("NAN").err().unwrap(), ParseError::InvalidValue);
-        assert_eq!(Value::parse("NaN").err().unwrap(), ParseError::InvalidValue);
-        assert_eq!(Value::parse("nan").err().unwrap(), ParseError::InvalidValue);
     }
 
     #[test]
@@ -625,30 +617,156 @@ mod tests {
     }
 
     #[test]
-    fn parse_number_too_big() {
-        assert_eq!(Value::parse("1e309").err().unwrap(), ParseError::NumberTooBig);
-        assert_eq!(Value::parse("-1e309").err().unwrap(), ParseError::NumberTooBig);
-    }
-
-    #[test]
     fn parse_expect_value() {
         assert_eq!(Value::parse("").err().unwrap(), ParseError::ExpectValue);
         assert_eq!(Value::parse(" \t\r\n\n").err().unwrap(), ParseError::ExpectValue);
     }
 
     #[test]
+    fn parse_invalid_value() {
+        assert_eq!(Value::parse("nul").err().unwrap(), ParseError::InvalidValue);
+        assert_eq!(Value::parse("?").err().unwrap(), ParseError::InvalidValue);
+
+        assert_eq!(Value::parse("+0").err().unwrap(), ParseError::InvalidValue);
+        assert_eq!(Value::parse("+1").err().unwrap(), ParseError::InvalidValue);
+        assert_eq!(Value::parse(".123").err().unwrap(), ParseError::InvalidValue);
+        assert_eq!(Value::parse("1.").err().unwrap(), ParseError::InvalidValue);
+        assert_eq!(Value::parse("INF").err().unwrap(), ParseError::InvalidValue);
+        assert_eq!(Value::parse("inf").err().unwrap(), ParseError::InvalidValue);
+        assert_eq!(Value::parse("NAN").err().unwrap(), ParseError::InvalidValue);
+        assert_eq!(Value::parse("NaN").err().unwrap(), ParseError::InvalidValue);
+        assert_eq!(Value::parse("nan").err().unwrap(), ParseError::InvalidValue);
+
+        assert_eq!(Value::parse("[1,]").err().unwrap(), ParseError::InvalidValue);
+        assert_eq!(Value::parse(r#"["a", nul]"#).err().unwrap(), ParseError::InvalidValue);
+    }
+
+    #[test]
     fn parse_root_not_singular() {
+        assert_eq!(Value::parse("null x").err().unwrap(), ParseError::RootNotSingular);
         assert_eq!(
             Value::parse(" \t\r\nnull\ntrue").err().unwrap(),
             ParseError::RootNotSingular
         );
-        assert_eq!(Value::parse(" \t\r\nnull\n\r\t ").ok().unwrap(), Value::Null);
         assert_eq!(
             Value::parse("null\n\r \ttrue\r \t\r").err().unwrap(),
             ParseError::RootNotSingular
         );
+
         assert_eq!(Value::parse("0123").err().unwrap(), ParseError::RootNotSingular);
         assert_eq!(Value::parse("0x0").err().unwrap(), ParseError::RootNotSingular);
         assert_eq!(Value::parse("0x123").err().unwrap(), ParseError::RootNotSingular);
+    }
+
+    #[test]
+    fn parse_number_too_big() {
+        assert_eq!(Value::parse("1e309").err().unwrap(), ParseError::NumberTooBig);
+        assert_eq!(Value::parse("-1e309").err().unwrap(), ParseError::NumberTooBig);
+    }
+
+    #[test]
+    fn parse_miss_quotation_mark() {
+        assert_eq!(Value::parse(r#"""#).err().unwrap(), ParseError::MissQuotationMark);
+        assert_eq!(Value::parse(r#""abc"#).err().unwrap(), ParseError::MissQuotationMark);
+    }
+
+    #[test]
+    fn parse_invalid_string_escape() {
+        assert_eq!(Value::parse(r#""\v""#).err().unwrap(), ParseError::InvalidStringEscape);
+        assert_eq!(Value::parse(r#""\'""#).err().unwrap(), ParseError::InvalidStringEscape);
+        assert_eq!(Value::parse(r#""\0""#).err().unwrap(), ParseError::InvalidStringEscape);
+        assert_eq!(
+            Value::parse(r#""\x12""#).err().unwrap(),
+            ParseError::InvalidStringEscape
+        );
+    }
+
+    #[test]
+    fn parse_invalid_string_char() {
+        assert_eq!(Value::parse("\"\x01\"").err().unwrap(), ParseError::InvalidStringChar);
+        assert_eq!(Value::parse("\"\x1F\"").err().unwrap(), ParseError::InvalidStringChar);
+    }
+
+    #[test]
+    fn parse_invalid_unicode_hex() {
+        assert_eq!(Value::parse(r#""\u""#).err().unwrap(), ParseError::InvalidUnicodeHex);
+        assert_eq!(Value::parse(r#""\u0""#).err().unwrap(), ParseError::InvalidUnicodeHex);
+        assert_eq!(Value::parse(r#""\u01""#).err().unwrap(), ParseError::InvalidUnicodeHex);
+        assert_eq!(Value::parse(r#""\u012""#).err().unwrap(), ParseError::InvalidUnicodeHex);
+        assert_eq!(
+            Value::parse(r#""\u/000""#).err().unwrap(),
+            ParseError::InvalidUnicodeHex
+        );
+        assert_eq!(
+            Value::parse(r#""\uG000""#).err().unwrap(),
+            ParseError::InvalidUnicodeHex
+        );
+        assert_eq!(
+            Value::parse(r#""\u0/00""#).err().unwrap(),
+            ParseError::InvalidUnicodeHex
+        );
+        assert_eq!(
+            Value::parse(r#""\u0G00""#).err().unwrap(),
+            ParseError::InvalidUnicodeHex
+        );
+        assert_eq!(
+            Value::parse(r#""\u00/0""#).err().unwrap(),
+            ParseError::InvalidUnicodeHex
+        );
+        assert_eq!(
+            Value::parse(r#""\u00G0""#).err().unwrap(),
+            ParseError::InvalidUnicodeHex
+        );
+        assert_eq!(
+            Value::parse(r#""\u000/""#).err().unwrap(),
+            ParseError::InvalidUnicodeHex
+        );
+        assert_eq!(
+            Value::parse(r#""\u000G""#).err().unwrap(),
+            ParseError::InvalidUnicodeHex
+        );
+        assert_eq!(
+            Value::parse(r#""\u 123""#).err().unwrap(),
+            ParseError::InvalidUnicodeHex
+        );
+    }
+
+    #[test]
+    fn parse_invalid_unicode_surrogate() {
+        assert_eq!(
+            Value::parse(r#""\uD800""#).err().unwrap(),
+            ParseError::InvalidUnicodeSurrogate
+        );
+        assert_eq!(
+            Value::parse(r#""\uDBFF""#).err().unwrap(),
+            ParseError::InvalidUnicodeSurrogate
+        );
+        assert_eq!(
+            Value::parse(r#""\uD800\\""#).err().unwrap(),
+            ParseError::InvalidUnicodeSurrogate
+        );
+        assert_eq!(
+            Value::parse(r#""\uD800\uDBFF""#).err().unwrap(),
+            ParseError::InvalidUnicodeSurrogate
+        );
+        assert_eq!(
+            Value::parse(r#""\uD800""#).err().unwrap(),
+            ParseError::InvalidUnicodeSurrogate
+        );
+        assert_eq!(
+            Value::parse(r#""\uD800\uE000""#).err().unwrap(),
+            ParseError::InvalidUnicodeSurrogate
+        );
+    }
+
+    #[test]
+    fn parse_miss_comma_or_square_bracket() {
+        assert_eq!(Value::parse("[1").err().unwrap(), ParseError::MissCommaOrSquareBracket);
+        assert_eq!(Value::parse("[1}").err().unwrap(), ParseError::MissCommaOrSquareBracket);
+        assert_eq!(
+            Value::parse("[1 2").err().unwrap(),
+            ParseError::MissCommaOrSquareBracket
+        );
+        assert_eq!(Value::parse("[[]").err().unwrap(), ParseError::MissCommaOrSquareBracket);
     }
 }
