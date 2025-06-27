@@ -6,6 +6,15 @@ pub enum Number {
     Float(f64),
 }
 
+impl ToString for Number {
+    fn to_string(&self) -> String {
+        match self {
+            Number::Int(n) => n.to_string(),
+            Number::Float(n) => n.to_string(),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum Value {
     Null,
@@ -14,6 +23,12 @@ pub enum Value {
     String(String),
     Array(Vec<Value>),
     Object(BTreeMap<String, Value>),
+}
+
+impl ToString for Value {
+    fn to_string(&self) -> String {
+        Value::stringify_value(self)
+    }
 }
 
 impl PartialEq for Value {
@@ -261,22 +276,21 @@ impl Value {
         // 转换为二进制返回
         context.bytes = &bytes[index_end..];
         let number_str = std::str::from_utf8(&bytes[0..index_end]).unwrap();
-        if is_float {
-            match number_str.parse::<f64>() {
-                Ok(num) => {
-                    if num.is_finite() {
-                        Ok(Value::Number(Number::Float(num)))
-                    } else {
-                        Err(ParseError::NumberTooBig)
-                    }
-                }
-                Err(_) => Err(ParseError::NumberTooBig),
-            }
-        } else {
+        if !is_float {
             match number_str.parse::<i64>() {
-                Ok(num) => Ok(Value::Number(Number::Int(num))),
-                Err(_) => Err(ParseError::NumberTooBig),
+                Ok(num) => return Ok(Value::Number(Number::Int(num))),
+                Err(_) => (),
             }
+        }
+        match number_str.parse::<f64>() {
+            Ok(num) => {
+                if num.is_finite() {
+                    Ok(Value::Number(Number::Float(num)))
+                } else {
+                    Err(ParseError::NumberTooBig)
+                }
+            }
+            Err(_) => Err(ParseError::NumberTooBig),
         }
     }
 
@@ -470,6 +484,116 @@ impl Value {
                 return Err(ParseError::MissKey);
             }
         }
+    }
+
+    fn stringify_value(value: &Value) -> String {
+        match value {
+            Value::Null => String::from("null"),
+            Value::Bool(b) => b.to_string(),
+            Value::Number(n) => n.to_string(),
+            Value::String(s) => Value::stringify_string(s),
+            Value::Array(arr) => Value::stringify_array(arr),
+            Value::Object(object) => Value::stringify_object(object),
+        }
+    }
+
+    fn stringify_string(s: &String) -> String {
+        let mut stack = Vec::new();
+        stack.push(b'"');
+        for &byte in s.as_bytes().iter() {
+            match byte {
+                b'"' => {
+                    stack.push(b'\\');
+                    stack.push(b'\"');
+                }
+                b'\\' => {
+                    stack.push(b'\\');
+                    stack.push(b'\\');
+                }
+                b'\x62' => {
+                    stack.push(b'\\');
+                    stack.push(b'b');
+                }
+                b'\x66' => {
+                    stack.push(b'\\');
+                    stack.push(b'f');
+                }
+                b'\n' => {
+                    stack.push(b'\\');
+                    stack.push(b'n');
+                }
+                b'\r' => {
+                    stack.push(b'\\');
+                    stack.push(b'r');
+                }
+                b'\t' => {
+                    stack.push(b'\\');
+                    stack.push(b't');
+                }
+                _ => {
+                    if byte < 0x20 {
+                        for &c in format!("\\u{:04X}", byte).as_bytes() {
+                            stack.push(c);
+                        }
+                    } else {
+                        stack.push(byte);
+                    }
+                }
+            }
+        }
+        stack.push(b'"');
+
+        std::str::from_utf8(&stack).unwrap().to_string()
+    }
+
+    fn stringify_array(arr: &Vec<Value>) -> String {
+        let mut result = String::from("[");
+        match arr.len() {
+            0 => (),
+            1 => result.push_str(&arr.first().unwrap().to_string()),
+            _ => {
+                result.push_str(&arr.first().unwrap().to_string());
+                for v in arr.iter().skip(1) {
+                    result.push(',');
+                    result.push_str(&v.to_string());
+                }
+            }
+        }
+        result.push(']');
+        result
+    }
+
+    fn stringify_object(object: &BTreeMap<String, Value>) -> String {
+        let mut result = String::from("{");
+        match object.len() {
+            0 => (),
+            1 => {
+                let (key, value) = object.first_key_value().unwrap();
+                result.push('"');
+                result.push_str(key);
+                result.push('"');
+                result.push(':');
+                result.push_str(&value.to_string());
+            }
+            _ => {
+                let (key, value) = object.first_key_value().unwrap();
+                result.push('"');
+                result.push_str(key);
+                result.push('"');
+                result.push(':');
+                result.push_str(&value.to_string());
+                for (key, value) in object.iter().skip(1) {
+                    result.push(',');
+                    result.push('"');
+                    result.push_str(key);
+                    result.push('"');
+                    result.push(':');
+                    result.push_str(&value.to_string());
+                }
+            }
+        }
+        result.push('}');
+        result
     }
 }
 
@@ -668,6 +792,49 @@ mod tests {
     }
 
     #[test]
+    fn parse_object() {
+        let mut map = BTreeMap::new();
+        map.insert("n".to_string(), Value::Null);
+        map.insert("f".to_string(), Value::Bool(false));
+        map.insert("t".to_string(), Value::Bool(true));
+        map.insert("i".to_string(), Value::Number(Number::Int(123)));
+        map.insert("s".to_string(), Value::String("abc".to_string()));
+        map.insert(
+            "a".to_string(),
+            Value::Array(vec![
+                Value::Number(Number::Int(1)),
+                Value::Number(Number::Int(2)),
+                Value::Number(Number::Int(3)),
+            ]),
+        );
+        let mut submap = BTreeMap::new();
+        submap.insert("1".to_string(), Value::Number(Number::Int(1)));
+        submap.insert("2".to_string(), Value::Number(Number::Int(2)));
+        submap.insert("3".to_string(), Value::Number(Number::Int(3)));
+        map.insert("o".to_string(), Value::Object(submap));
+
+        let object = Value::Object(map);
+        assert_eq!(
+            Value::parse(
+                r##"
+        {
+        "n" : null ,
+        "f" : false ,
+        "t" : true ,
+        "i" : 123 , 
+        "s" : "abc", 
+        "a" : [ 1, 2, 3 ],
+        "o" : { "1" : 1, "2" : 2, "3" : 3 }
+        }
+            "##
+            )
+            .ok()
+            .unwrap(),
+            object
+        );
+    }
+
+    #[test]
     fn parse_expect_value() {
         assert_eq!(Value::parse("").err().unwrap(), ParseError::ExpectValue);
         assert_eq!(Value::parse(" \t\r\n\n").err().unwrap(), ParseError::ExpectValue);
@@ -856,6 +1023,71 @@ mod tests {
         assert_eq!(
             Value::parse(r#"{"a":{}"#).err().unwrap(),
             ParseError::MissCommaOrCurlyBracket
+        );
+    }
+
+    fn test_roundtrip(json: &str) {
+        let v1 = Value::parse(json).unwrap();
+        match Value::parse(&v1.to_string()) {
+            Ok(v2) => assert_eq!(v1, v2),
+            Err(e) => {
+                println!("json:\n{}", json);
+                Err(e).unwrap()
+            }
+        }
+    }
+
+    #[test]
+    fn stringify_literal() {
+        test_roundtrip("null");
+        test_roundtrip("false");
+        test_roundtrip("true");
+    }
+
+    #[test]
+    fn stringify_number() {
+        test_roundtrip("0");
+        test_roundtrip("-0");
+        test_roundtrip("1");
+        test_roundtrip("-1");
+        test_roundtrip("1.5");
+        test_roundtrip("-1.5");
+        test_roundtrip("3.25");
+        test_roundtrip("1e+20");
+        test_roundtrip("1.234e+20");
+        test_roundtrip("1.234e-20");
+
+        test_roundtrip("1.0000000000000002"); /* the smallest number > 1 */
+        test_roundtrip("4.9406564584124654e-324"); /* minimum denormal */
+        test_roundtrip("-4.9406564584124654e-324");
+        test_roundtrip("2.2250738585072009e-308"); /* Max subnormal double */
+        test_roundtrip("-2.2250738585072009e-308");
+        test_roundtrip("2.2250738585072014e-308"); /* Min normal positive double */
+        test_roundtrip("-2.2250738585072014e-308");
+        test_roundtrip("1.7976931348623157e+308"); /* Max double */
+        test_roundtrip("-1.7976931348623157e+308");
+    }
+
+    #[test]
+    fn stringify_string() {
+        test_roundtrip(r#""""#);
+        test_roundtrip(r#""Hello""#);
+        test_roundtrip(r#""Hello\nWorld""#);
+        test_roundtrip(r#""\" \\ / \b \f \n \r \t""#);
+        test_roundtrip(r#""Hello\u0000World""#);
+    }
+
+    #[test]
+    fn stringify_array() {
+        test_roundtrip("[]");
+        test_roundtrip("[null,false,true,123,\"abc\",[1,2,3]]");
+    }
+
+    #[test]
+    fn stringify_object() {
+        test_roundtrip("{}");
+        test_roundtrip(
+            "{\"n\":null,\"f\":false,\"t\":true,\"i\":123,\"s\":\"abc\",\"a\":[1,2,3],\"o\":{\"1\":1,\"2\":2,\"3\":3}}",
         );
     }
 }
