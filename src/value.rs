@@ -92,6 +92,10 @@ impl Eq for Value {}
 
 impl Value {
     pub fn parse(json: &str) -> Result<Value, ParseError> {
+        Value::parse_slice(json.as_bytes())
+    }
+
+    pub fn parse_slice(json: &[u8]) -> Result<Value, ParseError> {
         let mut c: Context = Context::new(json);
         Value::parse_whitespace(&mut c).unwrap();
         match Value::parse_value(&mut c) {

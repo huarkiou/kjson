@@ -6,9 +6,9 @@ pub struct Context<'a> {
 }
 
 impl<'a> Context<'a> {
-    pub fn new(json: &'a str) -> Self {
+    pub fn new(json: &'a [u8]) -> Self {
         Self {
-            bytes: json.as_bytes(),
+            bytes: json,
             stack: Stack::<u8>::new(),
         }
     }
