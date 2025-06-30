@@ -2,6 +2,7 @@ use crate::context::Context;
 use crate::dict::Dict;
 use crate::error::ParseError;
 use crate::number::Number;
+use crate::stack::Stack;
 use std::ops::{Index, IndexMut};
 
 #[derive(Debug)]
@@ -272,12 +273,12 @@ impl Value {
         Some(value)
     }
 
-    fn encode_utf8(context: &mut Context, c: u32) -> Option<ParseError> {
+    fn encode_utf8(stack: &mut Stack<u8>, c: u32) -> Option<ParseError> {
         if let Some(ch) = char::from_u32(c) {
             let mut buf = [0; 4]; // UTF-8 最多需要 4 个字节
             let bytes = ch.encode_utf8(&mut buf);
             let utf8_bytes: &[u8] = bytes.as_bytes(); // 获取 &[u8]
-            context.stack.push_bytes(utf8_bytes);
+            stack.push_bytes(utf8_bytes);
             None
         } else {
             Some(ParseError::InvalidUnicodeSurrogate)
@@ -288,9 +289,10 @@ impl Value {
         if context.bytes.len() < 2 || *context.bytes.first().unwrap() != b'"' {
             return Err(ParseError::MissQuotationMark);
         }
+        let mut stack: Stack<u8> = Stack::new();
         let mut quotation_marked: bool = false;
         let mut i = 1;
-        let cur_len = context.stack.len();
+        let cur_len = stack.len();
         while i < context.bytes.len() {
             let b = context.bytes[i];
             match b {
@@ -302,14 +304,14 @@ impl Value {
                     // 处理转义序列
                     if i + 1 < context.bytes.len() {
                         match context.bytes[i + 1] {
-                            b'"' => context.stack.push_byte(b'\"'),
-                            b'\\' => context.stack.push_byte(b'\\'),
-                            b'/' => context.stack.push_byte(b'/'),
-                            b'b' => context.stack.push_byte(b'\x62'),
-                            b'f' => context.stack.push_byte(b'\x66'),
-                            b'n' => context.stack.push_byte(b'\n'),
-                            b'r' => context.stack.push_byte(b'\r'),
-                            b't' => context.stack.push_byte(b'\t'),
+                            b'"' => stack.push_byte(b'\"'),
+                            b'\\' => stack.push_byte(b'\\'),
+                            b'/' => stack.push_byte(b'/'),
+                            b'b' => stack.push_byte(b'\x62'),
+                            b'f' => stack.push_byte(b'\x66'),
+                            b'n' => stack.push_byte(b'\n'),
+                            b'r' => stack.push_byte(b'\r'),
+                            b't' => stack.push_byte(b'\t'),
                             b'u' => {
                                 if i + 6 >= context.bytes.len() {
                                     return Err(ParseError::InvalidUnicodeHex);
@@ -327,7 +329,7 @@ impl Value {
                                                             return Err(ParseError::InvalidUnicodeSurrogate);
                                                         }
                                                         if let Some(e) = Value::encode_utf8(
-                                                            context,
+                                                            &mut stack,
                                                             0x10000
                                                                 + (high_surrogate - 0xD800) * 0x400
                                                                 + (low_surrogate - 0xDC00),
@@ -341,7 +343,7 @@ impl Value {
                                             } else {
                                                 return Err(ParseError::InvalidUnicodeSurrogate);
                                             }
-                                        } else if let Some(e) = Value::encode_utf8(context, high_surrogate) {
+                                        } else if let Some(e) = Value::encode_utf8(&mut stack, high_surrogate) {
                                             return Err(e);
                                         } else {
                                             i += 4;
@@ -359,14 +361,14 @@ impl Value {
                     if b < 0x20 {
                         return Err(ParseError::InvalidStringChar);
                     }
-                    context.stack.push_byte(b);
+                    stack.push_byte(b);
                     i += 1;
                 }
             }
         }
         if quotation_marked {
             context.bytes = &context.bytes[i + 1..];
-            Ok(String::from_utf8(context.stack.pop_bytes(context.stack.len() - cur_len)).unwrap())
+            Ok(String::from_utf8(stack.pop_bytes(stack.len() - cur_len)).unwrap())
         } else {
             Err(ParseError::MissQuotationMark)
         }
