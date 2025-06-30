@@ -7,5 +7,9 @@ description = "A lightweight JSON parser intended for educational use and learni
 homepage = "https://github.com/huarkiou/kjson"
 documentation = "https://github.com/huarkiou/kjson"
 repository = "https://github.com/huarkiou/kjson"
+authors = ["huarkiou"]
+keywords = ["json", "parser", "educational"]
+categories = ["data-structures", "parsers"]
+publish = ["kjson"]
 
 [dependencies]
