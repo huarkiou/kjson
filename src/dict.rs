@@ -52,6 +52,12 @@ where
     }
 }
 
+impl<K, V> Default for Dict<K, V> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<K, V> Dict<K, V> {
     pub fn new() -> Self {
         Self { data: BTreeMap::new() }
