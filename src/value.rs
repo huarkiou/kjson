@@ -2,8 +2,7 @@ use crate::context::Context;
 use crate::dict::Dict;
 use crate::error::ParseError;
 use crate::number::Number;
-use std::ops::Index;
-use std::ops::IndexMut;
+use std::ops::{Index, IndexMut};
 
 #[derive(Debug)]
 pub enum Value {
@@ -448,7 +447,9 @@ impl Value {
             }
         }
     }
+}
 
+impl Value {
     fn stringify_value(value: &Value) -> String {
         match value {
             Value::Null => String::from("null"),
@@ -784,8 +785,8 @@ mod tests {
         "n" : null ,
         "f" : false ,
         "t" : true ,
-        "i" : 123 , 
-        "s" : "abc", 
+        "i" : 123 ,
+        "s" : "abc",
         "a" : [ 1, 2, 3 ],
         "o" : { "1" : 1, "2" : 2, "3" : 3 }
         }
@@ -1112,8 +1113,8 @@ mod tests {
         "n" : null ,
         "f" : false ,
         "t" : true ,
-        "i" : 123 , 
-        "s" : "abc", 
+        "i" : 123 ,
+        "s" : "abc",
         "a" : [ 1, 2, 3 ],
         "o" : { "1" : 1, "2" : 2, "3" : 3 }
         }
@@ -1137,8 +1138,8 @@ mod tests {
         "n" : null ,
         "f" : true ,
         "t" : false ,
-        "i" : 321 , 
-        "s" : "abc", 
+        "i" : 321 ,
+        "s" : "abc",
         "a" : [ 1, -2, 3 ],
         "o" : { "1" : 1, "2" : 2, "3" : 3 }
         }
