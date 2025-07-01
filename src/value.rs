@@ -5,7 +5,7 @@ use crate::number::Number;
 use crate::stack::Stack;
 use std::ops::{Index, IndexMut};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Value {
     Null,
     Bool(bool),

@@ -7,7 +7,7 @@ use std::{
     ops::{Index, IndexMut},
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Dict<K, V> {
     data: BTreeMap<K, V>,
 }
