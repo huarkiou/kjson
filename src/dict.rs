@@ -1,15 +1,26 @@
 use std::{
     borrow::Borrow,
-    collections::{
-        BTreeMap,
-        btree_map::{Iter, Keys},
-    },
-    ops::{Index, IndexMut},
+    collections::BTreeMap,
+    ops::{Deref, DerefMut, Index, IndexMut},
 };
 
 #[derive(Debug, Clone)]
 pub struct Dict<K, V> {
     data: BTreeMap<K, V>,
+}
+
+impl<K, V> Deref for Dict<K, V> {
+    type Target = BTreeMap<K, V>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
+}
+
+impl<K, V> DerefMut for Dict<K, V> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.data
+    }
 }
 
 impl<K, V> PartialEq for Dict<K, V>
@@ -52,41 +63,9 @@ where
     }
 }
 
-impl<K, V> Default for Dict<K, V> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl<K, V> Dict<K, V> {
     pub fn new() -> Self {
         Self { data: BTreeMap::new() }
-    }
-
-    pub fn len(&self) -> usize {
-        self.data.len()
-    }
-
-    pub fn keys(&self) -> Keys<'_, K, V> {
-        self.data.keys()
-    }
-
-    pub fn iter(&self) -> Iter<'_, K, V> {
-        self.data.iter()
-    }
-
-    pub fn insert(&mut self, key: K, value: V) -> Option<V>
-    where
-        K: Ord,
-    {
-        self.data.insert(key, value)
-    }
-
-    pub fn first_key_value(&self) -> Option<(&K, &V)>
-    where
-        K: Ord,
-    {
-        self.data.first_key_value()
     }
 
     #[allow(dead_code)]
