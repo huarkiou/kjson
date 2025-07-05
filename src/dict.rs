@@ -68,7 +68,6 @@ impl<K, V> Dict<K, V> {
         Self { data: BTreeMap::new() }
     }
 
-    #[allow(dead_code)]
     pub fn from_btree_map(btree_map: BTreeMap<K, V>) -> Self {
         Dict { data: btree_map }
     }
